@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>S&P 500 Yearly Averages</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+    svg {
+      border: 1px solid #ccc;
+    }
+  </style>
+</head>
+<body>
+  <h1>S&P 500 Yearly P/E Ratio vs. 10-Year Real Returns (incl. dividends)</h1>
+  <svg id="chart" width="800" height="500"></svg>
+
+<script>
+  d3.csv("data.csv").then(data => {
+  // Parse and preprocess the data
+  data.forEach(d => {
+    d.Date = new Date(d.Date);
+    d.Year = d.Date.getFullYear();
+    d.SP500 = +d.SP500;
+    d.Earnings = +d.Earnings;
+    d.CPI = +d["Consumer Price Index"];
+    d.Dividend = +d.Dividend; // Parse Dividend
+  });
+
+  // Group data by year and calculate yearly averages
+  const groupedData = d3.group(data, d => d.Year);
+  const yearlyData = Array.from(groupedData, ([year, records]) => {
+    const avgSP500 = d3.mean(records, d => d.SP500);
+    const avgEarnings = d3.mean(records, d => d.Earnings);
+    const avgCPI = d3.mean(records, d => d.CPI);
+    const avgDividend = d3.mean(records, d => d.Dividend);
+    return { year, avgSP500, avgEarnings, avgCPI, avgDividend };
+  });
+
+  // Calculate 10-year forward averages and real compounded returns
+  yearlyData.forEach((d, i, arr) => {
+    const tenYearsLater = arr.find(row => row.year === d.year + 10);
+    d.avgSP500Future = tenYearsLater ? tenYearsLater.avgSP500 : null;
+    d.avgEarningsFuture = tenYearsLater ? tenYearsLater.avgEarnings : null;
+    d.avgCPIFuture = tenYearsLater ? tenYearsLater.avgCPI : null;
+    d.PE = d.avgSP500 / d.avgEarnings;
+
+    if (tenYearsLater) {
+      // Calculate inflation adjustment
+      const inflationAdjustment = d.avgCPI / d.avgCPIFuture;
+
+      // Calculate reinvested value with dividends
+      const annualDividendYield = d.avgDividend / d.avgSP500; // Dividend yield
+      const totalReinvestmentFactor = Math.pow(1 + annualDividendYield, 10); // Compounded reinvestment
+      const realFuturePrice = (d.avgSP500Future * totalReinvestmentFactor) * inflationAdjustment;
+
+      // Calculate real compounded return with dividends reinvested
+      d.RealForwardReturnWithDividends = Math.pow(realFuturePrice / d.avgSP500, 1 / 10) - 1;
+    } else {
+      d.RealForwardReturnWithDividends = null;
+    }
+  });
+
+  // Filter valid data (exclude rows with null values)
+  const validData = yearlyData.filter(d => d.RealForwardReturnWithDividends !== null);
+
+  // Set up chart dimensions with extra padding for Y-axis label
+  const svg = d3.select("#chart");
+  const width = svg.attr("width");
+  const height = svg.attr("height") - 40;
+  const margin = { top: 20, right: 20, bottom: 30, left: 60 };
+
+  // Scales for the axes
+  const x = d3.scaleLinear()
+    .domain(d3.extent(validData, d => d.PE))
+    .range([margin.left, width - margin.right]);
+
+  const y = d3.scaleLinear()
+    .domain(d3.extent(validData, d => d.RealForwardReturnWithDividends))
+    .range([height - margin.bottom, margin.top]);
+
+  // Format the Y-axis labels as percentages
+  const yAxis = d3.axisLeft(y)
+    .tickFormat(d3.format(".0%")); // Converts values like 0.14 to "14%"
+
+  // Draw the Y-axis
+  svg.append("g")
+    .attr("transform", `translate(${margin.left},0)`)
+    .call(yAxis)
+    .append("text")
+    .attr("x", -40) // Move further to the left
+    .attr("y", height / 2)
+    .attr("fill", "black")
+    .attr("transform", "rotate(-90)")
+    .text("Real Compounded Annual Return (with Dividends) (%)");
+
+  // Draw the X-axis
+  const xAxis = d3.axisBottom(x);
+  svg.append("g")
+    .attr("transform", `translate(0,${height - margin.bottom})`)
+    .call(xAxis)
+    .append("text")
+    .attr("x", width / 2)
+    .attr("y", 25)
+    .attr("fill", "black")
+    .text("P/E Ratio (Yearly Average)");
+
+  // Add tooltip div
+  const tooltip = d3.select("body")
+    .append("div")
+    .style("position", "absolute")
+    .style("background", "rgba(0, 0, 0, 0.8)")
+    .style("color", "white")
+    .style("padding", "5px 10px")
+    .style("border-radius", "5px")
+    .style("pointer-events", "none")
+    .style("opacity", 0);
+
+  // Draw points
+  svg.selectAll(".dot")
+    .data(validData)
+    .enter()
+    .append("circle")
+    .attr("cx", d => x(d.PE))
+    .attr("cy", d => y(d.RealForwardReturnWithDividends))
+    .attr("r", 5)
+    .attr("fill", "steelblue")
+    .on("mouseover", (event, d) => {
+      tooltip.transition().duration(200).style("opacity", 1);
+      tooltip.html(`Year: ${d.year}<br>Real Return (w/ Dividends): ${(d.RealForwardReturnWithDividends * 100).toFixed(2)}%`)
+        .style("left", `${event.pageX + 10}px`)
+        .style("top", `${event.pageY - 20}px`);
+    })
+    .on("mouseout", () => {
+      tooltip.transition().duration(200).style("opacity", 0);
+    });
+
+  // Function to calculate the least squares regression line
+  function calculateRegression(data) {
+    const n = data.length;
+    const xMean = d3.mean(data, d => d.PE);
+    const yMean = d3.mean(data, d => d.RealForwardReturnWithDividends);
+
+    let numerator = 0;
+    let denominator = 0;
+
+    data.forEach(d => {
+      numerator += (d.PE - xMean) * (d.RealForwardReturnWithDividends - yMean);
+      denominator += (d.PE - xMean) ** 2;
+    });
+
+    const slope = numerator / denominator; // m
+    const intercept = yMean - slope * xMean; // b
+
+    return { slope, intercept };
+  }
+
+  // Calculate regression line
+  const regression = calculateRegression(validData);
+
+  // Generate points for the regression line
+  const regressionLine = [
+    { x: d3.min(validData, d => d.PE), y: regression.slope * d3.min(validData, d => d.PE) + regression.intercept },
+    { x: d3.max(validData, d => d.PE), y: regression.slope * d3.max(validData, d => d.PE) + regression.intercept }
+  ];
+
+  // Add the regression line to the chart
+  svg.append("line")
+    .attr("x1", x(regressionLine[0].x))
+    .attr("y1", y(regressionLine[0].y))
+    .attr("x2", x(regressionLine[1].x))
+    .attr("y2", y(regressionLine[1].y))
+    .attr("stroke", "red")
+    .attr("stroke-width", 2)
+    .attr("stroke-dasharray", "4"); // Dashed line for better visibility
+});
+</script>
+</body>
+</html>
