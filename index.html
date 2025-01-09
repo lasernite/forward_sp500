@@ -43,8 +43,13 @@
         d.avgSP500Future = tenYearsLater ? tenYearsLater.avgSP500 : null;
         d.avgEarningsFuture = tenYearsLater ? tenYearsLater.avgEarnings : null;
         d.PE = d.avgSP500 / d.avgEarnings;
-        d.ForwardReturn = tenYearsLater ? d.avgSP500Future / d.avgSP500 : null;
+
+        // Calculate average annual compounded return
+        d.ForwardReturn = tenYearsLater 
+          ? Math.pow(d.avgSP500Future / d.avgSP500, 1 / 10) - 1 
+          : null; // Subtract 1 to express as a rate
       });
+
 
       // Filter valid data (exclude rows with null values)
       const validData = yearlyData.filter(d => d.ForwardReturn !== null);
