@@ -15,11 +15,11 @@
   </style>
 </head>
 <body>
-  <h1>S&P 500 Yearly P/E Ratio vs. 10-Year Real Returns (incl. dividends)</h1>
+  <h1>S&P 500 Yearly P/E Ratio vs. 10-Year Real Returns (w/ dividends reinvested)</h1>
   <svg id="chart" width="800" height="500"></svg>
 
 <script>
-  d3.csv("data.csv").then(data => {
+d3.csv("data.csv").then(data => {
   // Parse and preprocess the data
   data.forEach(d => {
     d.Date = new Date(d.Date);
@@ -27,7 +27,7 @@
     d.SP500 = +d.SP500;
     d.Earnings = +d.Earnings;
     d.CPI = +d["Consumer Price Index"];
-    d.Dividend = +d.Dividend; // Parse Dividend
+    d.Dividend = +d.Dividend;
   });
 
   // Group data by year and calculate yearly averages
@@ -43,31 +43,34 @@
   // Calculate 10-year forward averages and real compounded returns
   yearlyData.forEach((d, i, arr) => {
     const tenYearsLater = arr.find(row => row.year === d.year + 10);
-    d.avgSP500Future = tenYearsLater ? tenYearsLater.avgSP500 : null;
-    d.avgEarningsFuture = tenYearsLater ? tenYearsLater.avgEarnings : null;
-    d.avgCPIFuture = tenYearsLater ? tenYearsLater.avgCPI : null;
-    d.PE = d.avgSP500 / d.avgEarnings;
+
+    // Calculate forward annual dividend yields and their average
+    const forwardYears = arr.filter(row => row.year > d.year && row.year <= d.year + 10);
+    const annualDividendYields = forwardYears.map(row => row.avgDividend / row.avgSP500); // Corrected dividend yield calculation
+    const avgAnnualDividendYield = d3.mean(annualDividendYields);
 
     if (tenYearsLater) {
       // Calculate inflation adjustment
-      const inflationAdjustment = d.avgCPI / d.avgCPIFuture;
+      const inflationAdjustment = d.avgCPI / tenYearsLater.avgCPI;
 
       // Calculate reinvested value with dividends
-      const annualDividendYield = d.avgDividend / d.avgSP500; // Dividend yield
-      const totalReinvestmentFactor = Math.pow(1 + annualDividendYield, 10); // Compounded reinvestment
-      const realFuturePrice = (d.avgSP500Future * totalReinvestmentFactor) * inflationAdjustment;
+      const reinvestmentFactor = Math.pow(1 + avgAnnualDividendYield, 10); // Compounded reinvestment
+      const realFuturePrice = (tenYearsLater.avgSP500 * reinvestmentFactor) * inflationAdjustment;
 
       // Calculate real compounded return with dividends reinvested
       d.RealForwardReturnWithDividends = Math.pow(realFuturePrice / d.avgSP500, 1 / 10) - 1;
     } else {
       d.RealForwardReturnWithDividends = null;
     }
+
+    // Calculate P/E Ratio
+    d.PE = d.avgSP500 / d.avgEarnings; // Ensure this calculation is valid
   });
 
-  // Filter valid data (exclude rows with null values)
-  const validData = yearlyData.filter(d => d.RealForwardReturnWithDividends !== null);
+  // Filter valid data
+  const validData = yearlyData.filter(d => d.RealForwardReturnWithDividends !== null && d.PE !== null && !isNaN(d.PE));
 
-  // Set up chart dimensions with extra padding for Y-axis label
+  // Set up chart dimensions
   const svg = d3.select("#chart");
   const width = svg.attr("width");
   const height = svg.attr("height") - 40;
@@ -108,6 +111,18 @@
     .attr("fill", "black")
     .text("P/E Ratio (Yearly Average)");
 
+  // Draw points
+  svg.selectAll(".dot")
+    .data(validData)
+    .enter()
+    .append("circle")
+    .attr("class", "dot") // Add class for easier selection
+    .attr("cx", d => x(d.PE))
+    .attr("cy", d => y(d.RealForwardReturnWithDividends))
+    .attr("r", 5)
+    .attr("fill", "steelblue");
+
+
   // Add tooltip div
   const tooltip = d3.select("body")
     .append("div")
@@ -119,15 +134,8 @@
     .style("pointer-events", "none")
     .style("opacity", 0);
 
-  // Draw points
+  // Add tooltips to the points
   svg.selectAll(".dot")
-    .data(validData)
-    .enter()
-    .append("circle")
-    .attr("cx", d => x(d.PE))
-    .attr("cy", d => y(d.RealForwardReturnWithDividends))
-    .attr("r", 5)
-    .attr("fill", "steelblue")
     .on("mouseover", (event, d) => {
       tooltip.transition().duration(200).style("opacity", 1);
       tooltip.html(`Year: ${d.year}<br>Real Return (w/ Dividends): ${(d.RealForwardReturnWithDividends * 100).toFixed(2)}%`)
@@ -138,7 +146,6 @@
       tooltip.transition().duration(200).style("opacity", 0);
     });
 
-  // Function to calculate the least squares regression line
   function calculateRegression(data) {
     const n = data.length;
     const xMean = d3.mean(data, d => d.PE);
@@ -176,7 +183,9 @@
     .attr("stroke", "red")
     .attr("stroke-width", 2)
     .attr("stroke-dasharray", "4"); // Dashed line for better visibility
+
 });
+
 </script>
 </body>
 </html>
