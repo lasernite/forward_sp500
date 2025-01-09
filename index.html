@@ -50,12 +50,13 @@
     // Filter valid data (exclude rows with null values)
     const validData = yearlyData.filter(d => d.ForwardReturn !== null);
 
-    // Set up chart dimensions
+    // Set up chart dimensions with extra padding for Y-axis label
     const svg = d3.select("#chart");
-    const width = svg.attr("width") - 40;
+    const width = svg.attr("width");
     const height = svg.attr("height") - 40;
-    const margin = { top: 20, right: 20, bottom: 30, left: 40 };
+    const margin = { top: 20, right: 20, bottom: 30, left: 60 };
 
+    // Scales for the axes
     const x = d3.scaleLinear()
       .domain(d3.extent(validData, d => d.PE))
       .range([margin.left, width - margin.right]);
@@ -64,10 +65,24 @@
       .domain(d3.extent(validData, d => d.ForwardReturn))
       .range([height - margin.bottom, margin.top]);
 
-    const xAxis = d3.axisBottom(x);
-    const yAxis = d3.axisLeft(y);
+    // Format the Y-axis labels as percentages
+    const yAxis = d3.axisLeft(y)
+      .tickFormat(d3.format(".0%")); // Converts values like 0.14 to "14%"
 
-    // Draw axes
+    // Draw the Y-axis
+    svg.append("g")
+      .attr("transform", `translate(${margin.left},0)`) // Adjusted position for label
+      .call(yAxis)
+      .append("text")
+      .attr("x", -40) // Move further to the left
+      .attr("y", height / 2)
+      .attr("fill", "black")
+      .attr("transform", "rotate(-90)")
+      .attr("text-anchor", "middle")
+      .text("Average Annual Compounded Return (%)");
+
+    // Draw the X-axis
+    const xAxis = d3.axisBottom(x);
     svg.append("g")
       .attr("transform", `translate(0,${height - margin.bottom})`)
       .call(xAxis)
@@ -77,15 +92,6 @@
       .attr("fill", "black")
       .text("P/E Ratio (Yearly Average)");
 
-    svg.append("g")
-      .attr("transform", `translate(${margin.left},0)`)
-      .call(yAxis)
-      .append("text")
-      .attr("x", -30)
-      .attr("y", height / 2)
-      .attr("fill", "black")
-      .attr("transform", "rotate(-90)")
-      .text("Average Annual Compounded Return");
 
     // Add tooltip div
     const tooltip = d3.select("body")
