@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>S&P 500 Visualization</title>
+  <title>S&P 500 Yearly Averages</title>
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <style>
     body {
@@ -15,37 +15,39 @@
   </style>
 </head>
 <body>
-  <h1>S&P 500 P/E Ratio vs. Ten-Year Returns</h1>
+  <h1>S&P 500 Yearly P/E Ratio vs. 10-Year Returns</h1>
   <svg id="chart" width="800" height="500"></svg>
 
   <script>
     // Load the CSV file
     d3.csv("data.csv").then(data => {
-      // Parse and process data
-      data.forEach((d, i, arr) => {
-        // Parse Date field into a JavaScript Date object
-        d.Date = new Date(d.Date); // Converts string to Date object
-        d.SP500 = +d.SP500; // Convert to number
-        d.Earnings = +d.Earnings; // Convert to number
-
-        // Calculate P/E Ratio
-        d.PE = d.SP500 / d.Earnings;
-
-        // Calculate 10-Year Forward Returns
-        const tenYearsLater = arr.find(row => {
-          // Parse `row.Date` into a JavaScript Date object if not already
-          row.Date = new Date(row.Date); 
-          return (
-            row.Date.getFullYear() === d.Date.getFullYear() + 10 &&
-            row.Date.getMonth() === d.Date.getMonth()
-          );
-        });
-        d.ForwardReturn = tenYearsLater ? tenYearsLater.SP500 / d.SP500 : null;
+      // Parse and preprocess the data
+      data.forEach(d => {
+        d.Date = new Date(d.Date);
+        d.Year = d.Date.getFullYear();
+        d.SP500 = +d.SP500;
+        d.Earnings = +d.Earnings;
       });
 
+      // Group data by year and calculate yearly averages
+      const groupedData = d3.group(data, d => d.Year);
+      const yearlyData = Array.from(groupedData, ([year, records]) => {
+        const avgSP500 = d3.mean(records, d => d.SP500);
+        const avgEarnings = d3.mean(records, d => d.Earnings);
+        return { year, avgSP500, avgEarnings };
+      });
 
-      // Filter valid data (only rows with forward returns)
-      const filteredData = data.filter(d => d.ForwardReturn !== null);
+      // Calculate 10-year forward averages
+      yearlyData.forEach((d, i, arr) => {
+        const tenYearsLater = arr.find(row => row.year === d.year + 10);
+        d.avgSP500Future = tenYearsLater ? tenYearsLater.avgSP500 : null;
+        d.avgEarningsFuture = tenYearsLater ? tenYearsLater.avgEarnings : null;
+        d.PE = d.avgSP500 / d.avgEarnings;
+        d.ForwardReturn = tenYearsLater ? d.avgSP500Future / d.avgSP500 : null;
+      });
+
+      // Filter valid data (exclude rows with null values)
+      const validData = yearlyData.filter(d => d.ForwardReturn !== null);
 
       // Set up chart dimensions
       const svg = d3.select("#chart");
@@ -54,11 +56,11 @@
       const margin = { top: 20, right: 20, bottom: 30, left: 40 };
 
       const x = d3.scaleLinear()
-        .domain(d3.extent(filteredData, d => d.PE))
+        .domain(d3.extent(validData, d => d.PE))
         .range([margin.left, width - margin.right]);
 
       const y = d3.scaleLinear()
-        .domain(d3.extent(filteredData, d => d.ForwardReturn))
+        .domain(d3.extent(validData, d => d.ForwardReturn))
         .range([height - margin.bottom, margin.top]);
 
       const xAxis = d3.axisBottom(x);
@@ -72,7 +74,7 @@
         .attr("x", width / 2)
         .attr("y", 25)
         .attr("fill", "black")
-        .text("P/E Ratio");
+        .text("P/E Ratio (Yearly Average)");
 
       svg.append("g")
         .attr("transform", `translate(${margin.left},0)`)
@@ -82,11 +84,11 @@
         .attr("y", height / 2)
         .attr("fill", "black")
         .attr("transform", "rotate(-90)")
-        .text("Ten-Year Forward Returns");
+        .text("Ten-Year Forward Returns (Yearly Average)");
 
       // Draw points
       svg.selectAll(".dot")
-        .data(filteredData)
+        .data(validData)
         .enter()
         .append("circle")
         .attr("cx", d => x(d.PE))
