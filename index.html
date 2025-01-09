@@ -121,6 +121,46 @@
       .on("mouseout", () => {
         tooltip.transition().duration(200).style("opacity", 0);
       });
+
+      // Function to calculate the least squares regression line
+      function calculateRegression(data) {
+        const n = data.length;
+        const xMean = d3.mean(data, d => d.PE);
+        const yMean = d3.mean(data, d => d.ForwardReturn);
+
+        let numerator = 0;
+        let denominator = 0;
+
+        data.forEach(d => {
+          numerator += (d.PE - xMean) * (d.ForwardReturn - yMean);
+          denominator += (d.PE - xMean) ** 2;
+        });
+
+        const slope = numerator / denominator; // m
+        const intercept = yMean - slope * xMean; // b
+
+        return { slope, intercept };
+      }
+
+      // Calculate regression line
+      const regression = calculateRegression(validData);
+
+      // Generate points for the regression line
+      const regressionLine = [
+        { x: d3.min(validData, d => d.PE), y: regression.slope * d3.min(validData, d => d.PE) + regression.intercept },
+        { x: d3.max(validData, d => d.PE), y: regression.slope * d3.max(validData, d => d.PE) + regression.intercept }
+      ];
+
+      // Add the regression line to the chart
+      svg.append("line")
+        .attr("x1", x(regressionLine[0].x))
+        .attr("y1", y(regressionLine[0].y))
+        .attr("x2", x(regressionLine[1].x))
+        .attr("y2", y(regressionLine[1].y))
+        .attr("stroke", "red")
+        .attr("stroke-width", 2)
+        .attr("stroke-dasharray", "4"); // Dashed line for better visibility
+
   });
 </script>
 </body>
