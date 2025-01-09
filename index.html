@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>S&P 500 Visualization</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+    svg {
+      border: 1px solid #ccc;
+    }
+  </style>
+</head>
+<body>
+  <h1>S&P 500 P/E Ratio vs. Ten-Year Returns</h1>
+  <svg id="chart" width="800" height="500"></svg>
+
+  <script>
+    // Load the CSV file
+    d3.csv("data.csv").then(data => {
+      // Parse and process data
+      data.forEach((d, i, arr) => {
+        // Parse Date field into a JavaScript Date object
+        d.Date = new Date(d.Date); // Converts string to Date object
+        d.SP500 = +d.SP500; // Convert to number
+        d.Earnings = +d.Earnings; // Convert to number
+
+        // Calculate P/E Ratio
+        d.PE = d.SP500 / d.Earnings;
+
+        // Calculate 10-Year Forward Returns
+        const tenYearsLater = arr.find(row => {
+          // Parse `row.Date` into a JavaScript Date object if not already
+          row.Date = new Date(row.Date); 
+          return (
+            row.Date.getFullYear() === d.Date.getFullYear() + 10 &&
+            row.Date.getMonth() === d.Date.getMonth()
+          );
+        });
+        d.ForwardReturn = tenYearsLater ? tenYearsLater.SP500 / d.SP500 : null;
+      });
+
+
+      // Filter valid data (only rows with forward returns)
+      const filteredData = data.filter(d => d.ForwardReturn !== null);
+
+      // Set up chart dimensions
+      const svg = d3.select("#chart");
+      const width = svg.attr("width") - 40;
+      const height = svg.attr("height") - 40;
+      const margin = { top: 20, right: 20, bottom: 30, left: 40 };
+
+      const x = d3.scaleLinear()
+        .domain(d3.extent(filteredData, d => d.PE))
+        .range([margin.left, width - margin.right]);
+
+      const y = d3.scaleLinear()
+        .domain(d3.extent(filteredData, d => d.ForwardReturn))
+        .range([height - margin.bottom, margin.top]);
+
+      const xAxis = d3.axisBottom(x);
+      const yAxis = d3.axisLeft(y);
+
+      // Draw axes
+      svg.append("g")
+        .attr("transform", `translate(0,${height - margin.bottom})`)
+        .call(xAxis)
+        .append("text")
+        .attr("x", width / 2)
+        .attr("y", 25)
+        .attr("fill", "black")
+        .text("P/E Ratio");
+
+      svg.append("g")
+        .attr("transform", `translate(${margin.left},0)`)
+        .call(yAxis)
+        .append("text")
+        .attr("x", -30)
+        .attr("y", height / 2)
+        .attr("fill", "black")
+        .attr("transform", "rotate(-90)")
+        .text("Ten-Year Forward Returns");
+
+      // Draw points
+      svg.selectAll(".dot")
+        .data(filteredData)
+        .enter()
+        .append("circle")
+        .attr("cx", d => x(d.PE))
+        .attr("cy", d => y(d.ForwardReturn))
+        .attr("r", 3)
+        .attr("fill", "steelblue");
+    });
+  </script>
+</body>
+</html>
