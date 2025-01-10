@@ -45,12 +45,13 @@ d3.csv("data.csv").then(data => {
 
   // Calculate forward CPI changes and derived metrics
   yearlyData.forEach((d, i, arr) => {
-    const priorYear = arr.find(row => row.year === d.year - 1);
+    const inflationAveragingYears = 10
+    const priorYear = arr.find(row => row.year === d.year - inflationAveragingYears);
     const tenYearsLater = arr.find(row => row.year === d.year + 10);
 
     // Calculate CPI change and real yield
     const cpiChange = priorYear && priorYear.avgCPI !== 0 
-      ? ((d.avgCPI - priorYear.avgCPI) / priorYear.avgCPI) * 100 
+      ? (Math.pow(d.avgCPI / priorYear.avgCPI, 1 / inflationAveragingYears) - 1) * 100 
       : null;
 
     d.realYield = (d.avgLongRate !== null && cpiChange !== null) 
