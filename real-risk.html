@@ -15,7 +15,7 @@
   </style>
 </head>
 <body>
-  <h1>S&P 500 Yearly P/E Ratio vs. 10-Year Real Returns (w/ dividends reinvested)</h1>
+  <h1>S&P 500 Equity Risk Premium vs. Real Returns</h1>
   <svg id="chart" width="800" height="500"></svg>
 
 <script>
@@ -24,10 +24,11 @@ d3.csv("data.csv").then(data => {
   data.forEach(d => {
     d.Date = new Date(d.Date);
     d.Year = d.Date.getFullYear();
-    d.SP500 = +d.SP500;
-    d.Earnings = +d.Earnings;
-    d.CPI = +d["Consumer Price Index"];
-    d.Dividend = +d.Dividend;
+    d.SP500 = +d.SP500 || 0;
+    d.Earnings = +d.Earnings || 0;
+    d.CPI = +d["Consumer Price Index"] || 0;
+    d.Dividend = +d.Dividend || 0;
+    d.LongRate = +d["Long Interest Rate"] || 0;
   });
 
   // Group data by year and calculate yearly averages
@@ -37,38 +38,65 @@ d3.csv("data.csv").then(data => {
     const avgEarnings = d3.mean(records, d => d.Earnings);
     const avgCPI = d3.mean(records, d => d.CPI);
     const avgDividend = d3.mean(records, d => d.Dividend);
-    return { year, avgSP500, avgEarnings, avgCPI, avgDividend };
+    const avgLongRate = d3.mean(records, d => d.LongRate);
+
+    return { year, avgSP500, avgEarnings, avgCPI, avgDividend, avgLongRate };
   });
 
-  // Calculate 10-year forward averages and real compounded returns
+  // Calculate forward CPI changes and derived metrics
   yearlyData.forEach((d, i, arr) => {
+    const priorYear = arr.find(row => row.year === d.year - 1);
     const tenYearsLater = arr.find(row => row.year === d.year + 10);
 
-    // Calculate forward annual dividend yields and their average
+    // Calculate CPI change and real yield
+    const cpiChange = priorYear && priorYear.avgCPI !== 0 
+      ? ((d.avgCPI - priorYear.avgCPI) / priorYear.avgCPI) * 100 
+      : null;
+
+    d.realYield = (d.avgLongRate !== null && cpiChange !== null) 
+      ? d.avgLongRate - cpiChange 
+      : null;
+
+    // Calculate P/E and earnings yield
+    d.PE = d.avgSP500 && d.avgEarnings ? d.avgSP500 / d.avgEarnings : null;
+    d.earningsYield = d.PE ? 1 / d.PE : null;
+
+    // Calculate equity risk premium
+    d.equityRiskPremium = (d.earningsYield !== null && d.realYield !== null)
+      ? d.earningsYield - d.realYield
+      : null;
+
+    // Calculate real returns with dividends
     const forwardYears = arr.filter(row => row.year > d.year && row.year <= d.year + 10);
-    const annualDividendYields = forwardYears.map(row => row.avgDividend / row.avgSP500); // Corrected dividend yield calculation
+    const annualDividendYields = forwardYears.map(row => row.avgDividend / row.avgSP500);
     const avgAnnualDividendYield = d3.mean(annualDividendYields);
 
-    if (tenYearsLater) {
-      // Calculate inflation adjustment
-      const inflationAdjustment = d.avgCPI / tenYearsLater.avgCPI;
+    if (tenYearsLater && d.avgSP500 > 0) {
+      const inflationAdjustment = tenYearsLater.avgCPI > 0 
+        ? d.avgCPI / tenYearsLater.avgCPI 
+        : 1;
 
-      // Calculate reinvested value with dividends
-      const reinvestmentFactor = Math.pow(1 + avgAnnualDividendYield, 10); // Compounded reinvestment
-      const realFuturePrice = (tenYearsLater.avgSP500 * reinvestmentFactor) * inflationAdjustment;
+      const reinvestmentFactor = avgAnnualDividendYield
+        ? Math.pow(1 + avgAnnualDividendYield, 10)
+        : 1;
 
-      // Calculate real compounded return with dividends reinvested
-      d.RealForwardReturnWithDividends = Math.pow(realFuturePrice / d.avgSP500, 1 / 10) - 1;
+      const realFuturePrice = tenYearsLater.avgSP500 * reinvestmentFactor * inflationAdjustment;
+
+      d.RealForwardReturnWithDividends = realFuturePrice > 0 
+        ? Math.pow(realFuturePrice / d.avgSP500, 1 / 10) - 1 
+        : null;
     } else {
       d.RealForwardReturnWithDividends = null;
     }
-
-    // Calculate P/E Ratio
-    d.PE = d.avgSP500 / d.avgEarnings; // Ensure this calculation is valid
   });
 
   // Filter valid data
-  const validData = yearlyData.filter(d => d.RealForwardReturnWithDividends !== null && d.PE !== null && !isNaN(d.PE));
+  const validData = yearlyData.filter(d => 
+    d.RealForwardReturnWithDividends !== null && 
+    d.equityRiskPremium !== null &&
+    !isNaN(d.equityRiskPremium) &&
+    !isNaN(d.RealForwardReturnWithDividends)
+  );
 
   // Set up chart dimensions
   const svg = d3.select("#chart");
@@ -78,7 +106,7 @@ d3.csv("data.csv").then(data => {
 
   // Scales for the axes
   const x = d3.scaleLinear()
-    .domain(d3.extent(validData, d => d.PE))
+    .domain(d3.extent(validData, d => d.equityRiskPremium))
     .range([margin.left, width - margin.right]);
 
   const y = d3.scaleLinear()
@@ -94,7 +122,7 @@ d3.csv("data.csv").then(data => {
     .attr("transform", `translate(${margin.left},0)`)
     .call(yAxis)
     .append("text")
-    .attr("x", -40) // Move further to the left
+    .attr("x", -40)
     .attr("y", height / 2)
     .attr("fill", "black")
     .attr("transform", "rotate(-90)")
@@ -109,19 +137,18 @@ d3.csv("data.csv").then(data => {
     .attr("x", width / 2)
     .attr("y", 25)
     .attr("fill", "black")
-    .text("P/E Ratio (Yearly Average)");
+    .text("Equity Risk Premium (%)");
 
   // Draw points
   svg.selectAll(".dot")
     .data(validData)
     .enter()
     .append("circle")
-    .attr("class", "dot") // Add class for easier selection
-    .attr("cx", d => x(d.PE))
+    .attr("class", "dot")
+    .attr("cx", d => x(d.equityRiskPremium))
     .attr("cy", d => y(d.RealForwardReturnWithDividends))
     .attr("r", 5)
     .attr("fill", "steelblue");
-
 
   // Add tooltip div
   const tooltip = d3.select("body")
@@ -138,52 +165,13 @@ d3.csv("data.csv").then(data => {
   svg.selectAll(".dot")
     .on("mouseover", (event, d) => {
       tooltip.transition().duration(200).style("opacity", 1);
-      tooltip.html(`Year: ${d.year}<br>Real Return (w/ Dividends): ${(d.RealForwardReturnWithDividends * 100).toFixed(2)}%`)
+      tooltip.html(`Year: ${d.year}<br>ERP: ${(d.equityRiskPremium).toFixed(2)}%<br>Real Return: ${(d.RealForwardReturnWithDividends * 100).toFixed(2)}%`)
         .style("left", `${event.pageX + 10}px`)
         .style("top", `${event.pageY - 20}px`);
     })
     .on("mouseout", () => {
       tooltip.transition().duration(200).style("opacity", 0);
     });
-
-  function calculateRegression(data) {
-    const n = data.length;
-    const xMean = d3.mean(data, d => d.PE);
-    const yMean = d3.mean(data, d => d.RealForwardReturnWithDividends);
-
-    let numerator = 0;
-    let denominator = 0;
-
-    data.forEach(d => {
-      numerator += (d.PE - xMean) * (d.RealForwardReturnWithDividends - yMean);
-      denominator += (d.PE - xMean) ** 2;
-    });
-
-    const slope = numerator / denominator; // m
-    const intercept = yMean - slope * xMean; // b
-
-    return { slope, intercept };
-  }
-
-  // Calculate regression line
-  const regression = calculateRegression(validData);
-
-  // Generate points for the regression line
-  const regressionLine = [
-    { x: d3.min(validData, d => d.PE), y: regression.slope * d3.min(validData, d => d.PE) + regression.intercept },
-    { x: d3.max(validData, d => d.PE), y: regression.slope * d3.max(validData, d => d.PE) + regression.intercept }
-  ];
-
-  // Add the regression line to the chart
-  svg.append("line")
-    .attr("x1", x(regressionLine[0].x))
-    .attr("y1", y(regressionLine[0].y))
-    .attr("x2", x(regressionLine[1].x))
-    .attr("y2", y(regressionLine[1].y))
-    .attr("stroke", "red")
-    .attr("stroke-width", 2)
-    .attr("stroke-dasharray", "4"); // Dashed line for better visibility
-
 });
 
 </script>
