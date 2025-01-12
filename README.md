@@ -2,6 +2,8 @@
 
 This project visualizes the relationship between some of the S&P 500's fundamental valuation metrics like P/E ratio, equity risk premium, etc. and subsequent 10-year real returns, based on Shiller data dating from 1871 to 2023, using a D3-based interactive scatter plot.
 
+![5Bqe5Nqk](https://github.com/user-attachments/assets/06a4ac56-34b3-474b-a7eb-d1cdc820a5fc)
+
 ## How to Run
 
 1. Ensure you have Python installed on your system.
