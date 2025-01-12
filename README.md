@@ -1,6 +1,6 @@
 # S&P 500 Valuation Visualization
 
-This project visualizes the relationship between the S&P 500's some fundamental valuation metrics like P/E ratio, equity risk premium, etc. and subsequent 10-year real returns, based on Shiller data dating from 1871 to 2023, using a D3-based interactive scatter plot.
+This project visualizes the relationship between some of the S&P 500's fundamental valuation metrics like P/E ratio, equity risk premium, etc. and subsequent 10-year real returns, based on Shiller data dating from 1871 to 2023, using a D3-based interactive scatter plot.
 
 ## How to Run
 
