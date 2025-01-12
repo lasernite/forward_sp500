@@ -168,7 +168,7 @@ d3.csv("data.csv").then(data => {
   svg.selectAll(".dot")
     .on("mouseover", (event, d) => {
       tooltip.transition().duration(200).style("opacity", 1);
-      tooltip.html(`Year: ${d.year}<br>ERP: ${(d.equityRiskPremium).toFixed(2)}%<br>Real Return: ${(d.RealForwardReturnWithDividends * 100).toFixed(2)}%`)
+      tooltip.html(`Year: ${d.year}<br>Risk Premium: ${(d.equityRiskPremium).toFixed(2)}%<br>Real Return: ${(d.RealForwardReturnWithDividends * 100).toFixed(2)}%`)
         .style("left", `${event.pageX + 10}px`)
         .style("top", `${event.pageY - 20}px`);
     })
@@ -176,44 +176,101 @@ d3.csv("data.csv").then(data => {
       tooltip.transition().duration(200).style("opacity", 0);
     });
 
-    // Function to calculate regression line
-    function calculateRegression(data) {
-      const n = data.length;
-      const xMean = d3.mean(data, d => d.equityRiskPremium);
-      const yMean = d3.mean(data, d => d.RealForwardReturnWithDividends);
-
-      let numerator = 0;
-      let denominator = 0;
+    function polynomialRegression(data, xAccessor, yAccessor, order) {
+      const X = [];
+      const Y = [];
 
       data.forEach(d => {
-        numerator += (d.equityRiskPremium - xMean) * (d.RealForwardReturnWithDividends - yMean);
-        denominator += (d.equityRiskPremium - xMean) ** 2;
+        const x = xAccessor(d);
+        const y = yAccessor(d);
+        if (!isNaN(x) && !isNaN(y)) {
+          X.push(x);
+          Y.push(y);
+        }
       });
 
-      const slope = numerator / denominator; // m
-      const intercept = yMean - slope * xMean; // b
+      const n = X.length;
+      const XMatrix = [];
+      const YMatrix = new Array(order + 1).fill(0);
 
-      return { slope, intercept };
+      for (let i = 0; i <= order; i++) {
+        XMatrix.push(new Array(order + 1).fill(0));
+        for (let j = 0; j <= order; j++) {
+          XMatrix[i][j] = d3.sum(X, x => x ** (i + j));
+        }
+        YMatrix[i] = d3.sum(X.map((x, k) => Y[k] * x ** i));
+      }
+
+      // Solve the matrix equation using Gaussian elimination
+      const coefficients = gaussianElimination(XMatrix, YMatrix);
+      return coefficients;
     }
 
-    // Calculate regression
-    const regression = calculateRegression(validData);
+    function gaussianElimination(A, B) {
+      const n = A.length;
+      for (let i = 0; i < n; i++) {
+        let maxRow = i;
+        for (let k = i + 1; k < n; k++) {
+          if (Math.abs(A[k][i]) > Math.abs(A[maxRow][i])) {
+            maxRow = k;
+          }
+        }
 
-    // Generate points for the regression line
-    const regressionLine = [
-      { x: d3.min(validData, d => d.equityRiskPremium), y: regression.slope * d3.min(validData, d => d.equityRiskPremium) + regression.intercept },
-      { x: d3.max(validData, d => d.equityRiskPremium), y: regression.slope * d3.max(validData, d => d.equityRiskPremium) + regression.intercept }
-    ];
+        [A[i], A[maxRow]] = [A[maxRow], A[i]];
+        [B[i], B[maxRow]] = [B[maxRow], B[i]];
 
-    // Add the regression line to the chart
-    svg.append("line")
-      .attr("x1", x(regressionLine[0].x))
-      .attr("y1", y(regressionLine[0].y))
-      .attr("x2", x(regressionLine[1].x))
-      .attr("y2", y(regressionLine[1].y))
-      .attr("stroke", "red")
+        for (let k = i + 1; k < n; k++) {
+          const factor = A[k][i] / A[i][i];
+          B[k] -= factor * B[i];
+          for (let j = i; j < n; j++) {
+            A[k][j] -= factor * A[i][j];
+          }
+        }
+      }
+
+      const x = new Array(n).fill(0);
+      for (let i = n - 1; i >= 0; i--) {
+        x[i] = B[i] / A[i][i];
+        for (let k = i - 1; k >= 0; k--) {
+          B[k] -= A[k][i] * x[i];
+        }
+      }
+      return x;
+    }
+
+    function generatePolynomialCurve(coefficients, xDomain, numPoints = 100) {
+      const [xMin, xMax] = xDomain;
+      const step = (xMax - xMin) / (numPoints - 1);
+
+      const points = [];
+      for (let i = 0; i < numPoints; i++) {
+        const x = xMin + i * step;
+        const y = coefficients.reduce((sum, coeff, power) => sum + coeff * x ** power, 0);
+        points.push({ x, y });
+      }
+      return points;
+    }
+    // Calculate polynomial regression coefficients (order 2 for quadratic)
+    const polyOrder = 2; // Change to 3 or higher for cubic, quartic, etc.
+    const coefficients = polynomialRegression(validData, d => d.equityRiskPremium, d => d.RealForwardReturnWithDividends, polyOrder);
+
+    // Generate regression curve
+    const regressionCurve = generatePolynomialCurve(
+      coefficients,
+      d3.extent(validData, d => d.equityRiskPremium)
+    );
+
+    // Add the regression curve to the chart
+    svg.append("path")
+      .datum(regressionCurve)
+      .attr("fill", "none")
+      .attr("stroke", "orange")
       .attr("stroke-width", 2)
-      .attr("stroke-dasharray", "4,4"); // Dashed line for better visibility
+      .attr("d", d3.line()
+        .x(d => x(d.x))
+        .y(d => y(d.y))
+      );
+
 });
 </script>
 </body>
